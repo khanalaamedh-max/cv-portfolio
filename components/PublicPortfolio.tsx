@@ -167,7 +167,7 @@ export default function PublicPortfolio({ initialContent }: Props) {
           <div className="profile-photo">
             {content.profile.photoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img alt="Sandip Poudel profile" src={content.profile.photoUrl} />
+              <img alt="Sandip Poudel profile" src="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wCE..." />
             ) : (
               <div className="profile-placeholder">
                 <span>SP</span>
