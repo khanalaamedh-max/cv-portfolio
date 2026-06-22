@@ -9,6 +9,10 @@ const jsonPath = path.join(process.cwd(), "data", "content.json");
 
 let cachedClient: MongoClient | null = null;
 
+function canUseLocalFileStore() {
+  return process.env.NODE_ENV !== "production";
+}
+
 async function getCollection() {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
@@ -57,6 +61,10 @@ export async function getContent(): Promise<SiteContent> {
     return defaultContent;
   }
 
+  if (!canUseLocalFileStore()) {
+    return defaultContent;
+  }
+
   try {
     const file = await fs.readFile(jsonPath, "utf8");
     return normalize(JSON.parse(file));
@@ -84,6 +92,10 @@ export async function saveContent(content: SiteContent) {
       { upsert: true }
     );
     return nextContent;
+  }
+
+  if (!canUseLocalFileStore()) {
+    throw new Error("MONGODB_URI is required to save admin content in production.");
   }
 
   await fs.mkdir(path.dirname(jsonPath), { recursive: true });
