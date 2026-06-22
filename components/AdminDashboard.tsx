@@ -35,10 +35,55 @@ function createId() {
   return crypto.randomUUID();
 }
 
-function readImage(file: File, callback: (value: string) => void) {
-  const reader = new FileReader();
-  reader.onload = () => callback(String(reader.result));
-  reader.readAsDataURL(file);
+function readImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) {
+      reject(new Error("Please select an image file."));
+      return;
+    }
+
+    const image = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    image.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+
+      const maxSize = 1200;
+      const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+      const width = Math.round(image.width * scale);
+      const height = Math.round(image.height * scale);
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+
+      if (!context) {
+        reject(new Error("Could not process this image."));
+        return;
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+
+      let quality = 0.82;
+      let result = canvas.toDataURL("image/jpeg", quality);
+
+      while (result.length > 1_200_000 && quality > 0.5) {
+        quality -= 0.08;
+        result = canvas.toDataURL("image/jpeg", quality);
+      }
+
+      resolve(result);
+    };
+
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Could not read this image."));
+    };
+
+    image.src = objectUrl;
+  });
 }
 
 export default function AdminDashboard() {
@@ -83,7 +128,10 @@ export default function AdminDashboard() {
     }
 
     if (!response.ok) {
-      setMessage("Could not save changes. Please try again.");
+      const error = (await response.json().catch(() => null)) as {
+        message?: string;
+      } | null;
+      setMessage(error?.message || "Could not save changes. Please try again.");
       return;
     }
 
@@ -216,9 +264,21 @@ export default function AdminDashboard() {
                     <input
                       accept="image/*"
                       type="file"
-                      onChange={(event) => {
+                      onChange={async (event) => {
                         const file = event.target.files?.[0];
-                        if (file) readImage(file, (value) => updateProfile("photoUrl", value));
+                        if (!file) return;
+
+                        setMessage("Optimizing photo...");
+                        try {
+                          updateProfile("photoUrl", await readImage(file));
+                          setMessage("Photo is ready. Click Save Changes.");
+                        } catch (error) {
+                          setMessage(
+                            error instanceof Error
+                              ? error.message
+                              : "Could not upload this photo."
+                          );
+                        }
                       }}
                     />
                   </span>
@@ -343,6 +403,7 @@ export default function AdminDashboard() {
                     employees[index] = next;
                     setContent({ ...content, employees });
                   }}
+                  onStatus={setMessage}
                 />
               )}
             />
@@ -383,6 +444,7 @@ export default function AdminDashboard() {
                     projects[index] = next;
                     setContent({ ...content, projects });
                   }}
+                  onStatus={setMessage}
                 />
               )}
             />
@@ -505,11 +567,13 @@ function CollectionEditor<T>({
 function EmployeeEditor({
   employee,
   onUpdate,
-  onDelete
+  onDelete,
+  onStatus
 }: {
   employee: Employee;
   onUpdate: (employee: Employee) => void;
   onDelete: () => void;
+  onStatus: (message: string) => void;
 }) {
   return (
     <article className="editor-card">
@@ -539,6 +603,7 @@ function EmployeeEditor({
       </label>
       <EditorActions
         onDelete={onDelete}
+        onStatus={onStatus}
         onUpload={(value) => onUpdate({ ...employee, photoUrl: value })}
       />
     </article>
@@ -548,11 +613,13 @@ function EmployeeEditor({
 function ProjectEditor({
   project,
   onUpdate,
-  onDelete
+  onDelete,
+  onStatus
 }: {
   project: PortfolioProject;
   onUpdate: (project: PortfolioProject) => void;
   onDelete: () => void;
+  onStatus: (message: string) => void;
 }) {
   return (
     <article className="editor-card">
@@ -591,6 +658,7 @@ function ProjectEditor({
       </label>
       <EditorActions
         onDelete={onDelete}
+        onStatus={onStatus}
         onUpload={(value) => onUpdate({ ...project, imageUrl: value })}
       />
     </article>
@@ -683,10 +751,12 @@ function SocialEditor({
 
 function EditorActions({
   onDelete,
-  onUpload
+  onUpload,
+  onStatus
 }: {
   onDelete: () => void;
   onUpload: (value: string) => void;
+  onStatus: (message: string) => void;
 }) {
   return (
     <div className="flex flex-wrap gap-3">
@@ -696,9 +766,21 @@ function EditorActions({
         <input
           accept="image/*"
           type="file"
-          onChange={(event) => {
+          onChange={async (event) => {
             const file = event.target.files?.[0];
-            if (file) readImage(file, onUpload);
+            if (!file) return;
+
+            onStatus("Optimizing image...");
+            try {
+              onUpload(await readImage(file));
+              onStatus("Image is ready. Click Save Changes.");
+            } catch (error) {
+              onStatus(
+                error instanceof Error
+                  ? error.message
+                  : "Could not upload this image."
+              );
+            }
           }}
         />
       </label>

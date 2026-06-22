@@ -14,17 +14,31 @@ function canUseLocalFileStore() {
 }
 
 async function getCollection() {
-  const uri = process.env.MONGODB_URI;
+  const uri = process.env.MONGODB_URI?.trim();
   if (!uri) {
     return null;
   }
 
   if (!cachedClient) {
-    cachedClient = new MongoClient(uri);
+    cachedClient = new MongoClient(uri, {
+      serverSelectionTimeoutMS: 5000
+    });
     await cachedClient.connect();
   }
 
-  return cachedClient.db().collection("site_content");
+  return cachedClient
+    .db(process.env.MONGODB_DB || "cvportfolio")
+    .collection("site_content");
+}
+
+async function getCollectionSafely() {
+  try {
+    return await getCollection();
+  } catch (error) {
+    cachedClient = null;
+    console.error("MongoDB connection failed:", error);
+    return null;
+  }
 }
 
 function normalize(content: SiteContent): SiteContent {
@@ -45,20 +59,27 @@ function normalize(content: SiteContent): SiteContent {
 }
 
 export async function getContent(): Promise<SiteContent> {
-  const collection = await getCollection();
+  const collection = await getCollectionSafely();
   if (collection) {
-    const record = await collection.findOne<{ content: SiteContent }>({
-      key: contentKey
-    });
-    if (record?.content) {
-      return normalize(record.content);
+    try {
+      const record = await collection.findOne<{ content: SiteContent }>({
+        key: contentKey
+      });
+      if (record?.content) {
+        return normalize(record.content);
+      }
+      await collection.updateOne(
+        { key: contentKey },
+        { $set: { key: contentKey, content: defaultContent } },
+        { upsert: true }
+      );
+      return defaultContent;
+    } catch (error) {
+      console.error("MongoDB content read failed:", error);
+      if (!canUseLocalFileStore()) {
+        return defaultContent;
+      }
     }
-    await collection.updateOne(
-      { key: contentKey },
-      { $set: { key: contentKey, content: defaultContent } },
-      { upsert: true }
-    );
-    return defaultContent;
   }
 
   if (!canUseLocalFileStore()) {
@@ -84,14 +105,32 @@ export async function saveContent(content: SiteContent) {
     }
   });
 
-  const collection = await getCollection();
-  if (collection) {
-    await collection.updateOne(
-      { key: contentKey },
-      { $set: { key: contentKey, content: nextContent } },
-      { upsert: true }
+  let collection = null;
+  try {
+    collection = await getCollection();
+  } catch (error) {
+    cachedClient = null;
+    console.error("MongoDB connection failed:", error);
+    throw new Error(
+      "MongoDB connection failed. Check MONGODB_URI, database user password, and Atlas Network Access."
     );
-    return nextContent;
+  }
+
+  if (collection) {
+    try {
+      await collection.updateOne(
+        { key: contentKey },
+        { $set: { key: contentKey, content: nextContent } },
+        { upsert: true }
+      );
+      return nextContent;
+    } catch (error) {
+      cachedClient = null;
+      console.error("MongoDB content save failed:", error);
+      throw new Error(
+        "MongoDB connection failed. Check MONGODB_URI, database user password, and Atlas Network Access."
+      );
+    }
   }
 
   if (!canUseLocalFileStore()) {
