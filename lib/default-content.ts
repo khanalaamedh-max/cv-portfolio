@@ -17,7 +17,8 @@ export const defaultContent: SiteContent = {
       "Sandip Poudel is a digital marketing and web development professional focused on practical business growth. He manages social media strategy, Facebook and Instagram advertising, lead generation campaigns, content planning, and website development for businesses that need measurable online visibility. Alongside digital work, he is actively involved in real-world family business operations generating over NPR 1 Crore+ annual turnover, giving him a grounded understanding of sales, customer behavior, operations, and execution.",
     email: "sandip.poudel@example.com",
     phone: "9749897650",
-    whatsapp: "9749897650"
+    whatsapp: "9749897650",
+    photoUrl: "/sandip-profile.jpeg"
   },
   skills: [
     "Meta Ads",
